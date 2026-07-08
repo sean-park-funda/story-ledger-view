@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>스토리 원장 뷰 (v1 read-only)</title>
+<style>
+ body{font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;margin:0;background:#14161c;color:#e8e8ee}
+ h1{font-size:18px;padding:14px 20px;margin:0;border-bottom:1px solid #2a2d38}
+ h2{font-size:14px;color:#9aa3b5;margin:0 0 10px}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
+ .card{background:#1c1f29;border:1px solid #2a2d38;border-radius:10px;padding:14px;min-height:280px}
+ .full{grid-column:1/-1;min-height:0}
+ svg{width:100%;height:auto;display:block}
+ table{width:100%;border-collapse:collapse;font-size:12px}
+ td,th{padding:4px 8px;border-bottom:1px solid #2a2d38;text-align:left}
+ .ok{color:#7dd87d}.warn{color:#ffb454}.bad{color:#ff6b6b}
+ .legend{font-size:11px;color:#7c8496;margin-top:6px}
+</style></head><body>
+<h1>📖 스토리 원장 뷰 <span style="color:#7c8496;font-size:12px">v1 read-only · events.jsonl에서 파생</span></h1>
+<div class="grid">
+ <div class="card"><h2>① 관계 웹 (원형 배치, 엣지=합산 점수)</h2><div id="web"></div>
+  <div class="legend">초록=긍정 / 빨강=부정 · 굵기=|강도| · 회색 노드=dead</div></div>
+ <div class="card"><h2>④ 긴장 곡선 (계획 vs 실측)</h2><div id="ten"></div>
+  <div class="legend">점선=계획 · 실선=실측 (episode 스케일만)</div></div>
+ <div class="card full"><h2>⑤ 복선 스레드</h2><div id="thr"></div></div>
+ <div class="card full"><h2>사건 로그 (진실)</h2><div id="evt"></div></div>
+</div>
+<script>
+const D={"characters": [{"id": "kael", "name": "카엘 (주인공)", "status": "active", "first_appearance": "ep-001", "power_stat": 4}, {"id": "mira", "name": "미라 (여주)", "status": "active", "first_appearance": "ep-001", "power_stat": 3}, {"id": "marcus", "name": "마르쿠스 (조언자)", "status": "dead", "death_unit": "ep-003", "first_appearance": "ep-001"}, {"id": "vern", "name": "베른 (대장장이)", "status": "active", "first_appearance": "ep-002", "power_stat": 2}], "relationships": [{"pair": "kael→marcus", "axes": {"trust": 3, "respect": 3}, "score": 6}, {"pair": "kael→mira", "axes": {"trust": 1, "intimacy": 2}, "score": 3}, {"pair": "mira→kael", "axes": {"trust": 1, "intimacy": 2}, "score": 3}], "events": [{"id": "e1", "unit": "ep-001", "type": "공동위기", "mechanism": "ACTION", "source": "kael", "target": "mira", "deltas": [{"pair": "kael→mira", "axis": "trust", "delta": 1}, {"pair": "mira→kael", "axis": "trust", "delta": 1}], "value_shift": "-→+"}, {"id": "e2", "unit": "ep-002", "type": "비밀폭로", "mechanism": "REVELATION", "source": "marcus", "target": "kael", "deltas": [{"pair": "kael→marcus", "axis": "trust", "delta": 2}], "value_shift": "+→-"}, {"id": "e3", "unit": "ep-003", "type": "희생", "mechanism": "ACTION", "source": "marcus", "target": "kael", "deltas": [{"pair": "kael→marcus", "axis": "respect", "delta": 3}], "value_shift": "+→-", "note": "마르쿠스 사망"}, {"id": "e4", "unit": "ep-004", "type": "일상", "mechanism": "ACTION", "source": "kael", "target": "vern", "deltas": [], "value_shift": null, "note": "카엘이 대장간에서 검을 손질했다"}, {"id": "e5", "unit": "ep-005", "type": "조언", "mechanism": "REVELATION", "source": "marcus", "target": "kael", "deltas": [{"pair": "kael→marcus", "axis": "trust", "delta": 1}], "value_shift": "-→+", "note": "마르쿠스가 카엘에게 검술의 비밀을 알려주었다"}, {"id": "e6", "unit": "ep-006", "type": "첫친밀", "mechanism": "ACTION", "source": "kael", "target": "mira", "deltas": [{"pair": "kael→mira", "axis": "intimacy", "delta": 2}, {"pair": "mira→kael", "axis": "intimacy", "delta": 2}], "value_shift": "-→+"}], "threads": [["F1", "마르쿠스의 유언에 숨은 암호", "ep-003", "local", "ep-005", "-", "미회수"], ["F2", "베른이 만든 검의 각인", "ep-002", "local", "ep-007", "ep-011 (arc-02)", "회수완결"], ["F3", "왕가의 문장 반지", "ep-001", "series", "미정", "-", "미회수"]], "tension": []};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// ① 관계 웹
+(()=>{
+ const cs=D.characters, n=cs.length; if(!n){web.innerHTML='<i>데이터 없음</i>';return}
+ const W=520,H=340,cx=W/2,cy=H/2,R=Math.min(W,H)/2-60;
+ const pos={}; cs.forEach((c,i)=>{const a=2*Math.PI*i/n-Math.PI/2;
+   pos[c.id]=[cx+R*Math.cos(a),cy+R*Math.sin(a)]});
+ let s=`<svg viewBox="0 0 ${W} ${H}">`;
+ for(const r of D.relationships){
+  const [a,b]=r.pair.split('→'); if(!pos[a]||!pos[b])continue;
+  const[x1,y1]=pos[a],[x2,y2]=pos[b];
+  const col=r.score>=0?'#5fbf5f':'#d9534f', w=Math.max(1,Math.abs(r.score));
+  // 방향성: 살짝 휜 곡선으로 A→B와 B→A 구분
+  const mx=(x1+x2)/2+(y2-y1)*.12, my=(y1+y2)/2+(x1-x2)*.12;
+  s+=`<path d="M${x1},${y1} Q${mx},${my} ${x2},${y2}" stroke="${col}" stroke-width="${w}" fill="none" opacity=".75"><title>${esc(r.pair)}: ${esc(JSON.stringify(r.axes))}</title></path>`;
+ }
+ for(const c of cs){const[x,y]=pos[c.id];
+  const dead=c.status==='dead';
+  s+=`<circle cx="${x}" cy="${y}" r="16" fill="${dead?'#555':'#3b6ea5'}" stroke="#fff" stroke-width="1.5"/>
+      <text x="${x}" y="${y+30}" text-anchor="middle" fill="#e8e8ee" font-size="11">${esc(c.name||c.id)}${dead?' †':''}</text>`}
+ web.innerHTML=s+'</svg>';
+})();
+// ④ 긴장 곡선
+(()=>{
+ const rows=D.tension.filter(r=>r[1]==='episode'&&(r[2]!=='-'||r[3]!=='-'));
+ if(!rows.length){ten.innerHTML='<i>긴장 데이터 없음 (파일럿 집필 시 채워짐)</i>';return}
+ const W=520,H=200,P=30, xs=i=>P+i*(W-2*P)/Math.max(1,rows.length-1), ys=v=>H-P-v*(H-2*P);
+ const line=(idx,dash)=>{let p='';rows.forEach((r,i)=>{const v=parseFloat(r[idx]);if(!isNaN(v))p+=(p?' L':'M')+xs(i)+','+ys(v)});
+   return p?`<path d="${p}" stroke="${dash?'#7c8496':'#ffb454'}" ${dash?'stroke-dasharray="4 3"':''} stroke-width="2" fill="none"/>`:''};
+ let s=`<svg viewBox="0 0 ${W} ${H}">`+line(2,true)+line(3,false);
+ rows.forEach((r,i)=>{s+=`<text x="${xs(i)}" y="${H-8}" text-anchor="middle" fill="#7c8496" font-size="10">${esc(r[0])}</text>`});
+ ten.innerHTML=s+'</svg>';
+})();
+// ⑤ 복선
+(()=>{
+ if(!D.threads.length){thr.innerHTML='<i>복선 없음</i>';return}
+ let s='<table><tr><th>ID</th><th>내용</th><th>심음</th><th>scope</th><th>예정</th><th>회수</th><th>상태</th></tr>';
+ for(const t of D.threads){
+  const st=t[t.length-1], cls=/완결|회수/.test(st)&&!/미회수/.test(st)?'ok':/기한|초과/.test(st)?'bad':'warn';
+  s+=`<tr><td>${esc(t[0])}</td><td>${esc(t[1])}</td><td>${esc(t[2])}</td><td>${esc(t[3])}</td><td>${esc(t[4])}</td><td>${esc(t[5]||'-')}</td><td class="${cls}">${esc(st)}</td></tr>`}
+ thr.innerHTML=s+'</table>';
+})();
+// 사건 로그
+(()=>{
+ if(!D.events.length){evt.innerHTML='<i>사건 없음</i>';return}
+ let s='<table><tr><th>id</th><th>unit</th><th>type</th><th>mech</th><th>src→tgt</th><th>deltas</th><th>shift</th></tr>';
+ for(const e of D.events){
+  const d=(e.deltas||[]).map(x=>`${x.pair} ${x.axis}${x.delta>0?'+':''}${x.delta}`).join(', ');
+  const turn=(e.deltas||[]).length||e.value_shift;
+  s+=`<tr${turn?'':' class="bad"'}><td>${esc(e.id)}</td><td>${esc(e.unit)}</td><td>${esc(e.type)}</td><td>${esc(e.mechanism)}</td><td>${esc(e.source)}→${esc(e.target)}</td><td>${esc(d||'⚠ turn 없음')}</td><td>${esc(e.value_shift||'-')}</td></tr>`}
+ evt.innerHTML=s+'</table>';
+})();
+</script></body></html>
